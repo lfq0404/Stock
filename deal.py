@@ -9,6 +9,7 @@
 @time: 21-2-24 下午4:40
 @desc:
 '''
+import datetime
 import requests
 import time
 import pandas as pd
@@ -76,24 +77,24 @@ class JeremyDeal:
         """
         df = df[['开盘价', '收盘价', '最高价', '最低价']]
         df['ma5'] = df['收盘价'].rolling(5).mean()
+        df['ma10'] = df['收盘价'].rolling(10).mean()
         df['ma20'] = df['收盘价'].rolling(20).mean()
 
         # 计算金叉、死叉
         df = df.dropna()
-        sr1 = df['ma5'] < df['ma20']
-        sr2 = df['ma5'] >= df['ma20']
+        sr5_20 = df['ma5'] < df['ma20']
+        sr20_5 = df['ma5'] >= df['ma20']
+        sr20_5_yesterday = sr20_5.shift(1)
+        # sr5_10 = df['ma5'] < df['ma10']
+        # sr10_5_yesterday = (df['ma5'] >= df['ma10']).shift(1)
 
-        death_cross = df[sr1 & sr2.shift(1)].index
-        golden_cross = df[-(sr1 | sr2.shift(1))].index
+        death_cross = df[sr5_20 & sr20_5_yesterday].index  # ma5昨天在上，今天在下
+        golden_cross = df[-(sr5_20 | sr20_5_yesterday)].index
 
+        # 金叉日期 DatetimeIndex(['2007-04-12', '2007-06-14', '2007-12-10', '2008-04-23',..., '2020-01-02']
         print('金叉日期', golden_cross)
-        """
-        金叉日期 DatetimeIndex(['2007-04-12', '2007-06-14', '2007-12-10', '2008-04-23',..., '2020-01-02']
-        """
+        # 死叉日期 DatetimeIndex(['2007-06-04', '2007-11-06', '2007-12-13', '2008-05-20',..., '2019-11-12', '2019-12-23']
         print('死叉日期', death_cross)
-        """
-        死叉日期 DatetimeIndex(['2007-06-04', '2007-11-06', '2007-12-13', '2008-05-20',..., '2019-11-12', '2019-12-23']
-        """
 
         return golden_cross, death_cross
 
@@ -101,7 +102,7 @@ class JeremyDeal:
         """
         均线(金叉、死叉)模拟交易
         :param begin_date: 开始模拟的日期 2020-01-01
-        :return:
+        :return: 盈亏数据
         """
         # 炒股收益率
         first_money = 100000
@@ -114,15 +115,16 @@ class JeremyDeal:
         sr = sr[begin_date:]
 
         for i in range(0, len(sr)):
-            p = float(df['开盘价'][sr.index[i]])  # 当天的开盘价
+            bp = float(df['开盘价'][sr.index[i]])  # 当天的开盘价
+            lp = float(df['最低价'][sr.index[i]])  # 当天的最低价
             if sr.iloc[i] == 1:
                 # 金叉
-                buy = money // (100 * p)  # 买多少手
+                buy = money // (100 * bp)  # 买多少手
                 hold += buy * 100
-                money -= buy * 100 * p
+                money -= buy * 100 * bp
             else:
-                # 死叉
-                money += hold * p
+                # 死叉，以最低价模拟
+                money += hold * lp
                 hold = 0  # 持有股票重置为0
 
         # 计算最后一天股票市值加上持有的资金
@@ -132,13 +134,44 @@ class JeremyDeal:
         print('模拟交易到今天，持有资产总额:', now_money)
         print('盈亏情况:', now_money - first_money)
 
+        return now_money - first_money
+
 
 if __name__ == '__main__':
+    begin_date = '2020-01-01'  # 开始模拟炒股的时间
+
+    # stocks = {
+    #     'sz': [
+    #         '300760',
+    #         '002340',
+    #         '300999',
+    #         '300783',
+    #         '300773',
+    #         '300785',
+    #         '002950',
+    #         '300750',
+    #         '300696',
+    #     ],
+    #     'sh': []
+    # }
+    # result = []
+    # for k, stock_codes in stocks.items():
+    #     for stock_code in stock_codes:
+    #         deal = JeremyDeal()
+    #         stock_df = deal.get_stock_history_by_code(k, stock_code, start=20190101)
+    #         golden_cross, death_cross = deal.calculate_cross_params(stock_df)
+    #         income = deal.average_mock_trading(stock_df, golden_cross, death_cross, begin_date)
+    #         result.append('{} 从{}开始至{}的收益为：{}'.format(stock_code, begin_date, datetime.date.today(), income))
+    # for i in result:
+    #     print(i)
+
+    # 单个测试
     deal = JeremyDeal()
     # 获取股票历史信息
-    stock_df = deal.get_stock_history_by_code('sz', '300760')
-    # stock_df = pd.read_excel('test.xlsx')
-    # stock_df.set_index(["交易日期"], inplace=True)
+    # stock_df = deal.get_stock_history_by_code('sz', '300773')
+    # stock_df.to_excel('test.xlsx')
+    stock_df = pd.read_excel('test.xlsx')
+    stock_df.set_index(["交易日期"], inplace=True)
     # 计算均线
     golden_cross, death_cross = deal.calculate_cross_params(stock_df)
-    deal.average_mock_trading(stock_df, golden_cross, death_cross, '2020-01-01')
+    income = deal.average_mock_trading(stock_df, golden_cross, death_cross, begin_date)
